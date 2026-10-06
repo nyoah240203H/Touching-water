@@ -1,0 +1,72 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Touching Water</title><meta name="description" content="Explore water, light and emotion. Hold A for calm or S for energy."><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='black'/%3E%3Cpath d='M4 16Q10 5 16 16T28 16M4 22Q10 11 16 22T28 22' stroke='%2377e8c2' fill='none' stroke-width='2'/%3E%3C/svg%3E"><style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#000;color:#eee;font-family:Arial,sans-serif}body{overflow:hidden}canvas{position:fixed;inset:0;width:100%;height:100%;display:block}header{position:absolute;top:32px;left:36px;right:36px;display:flex;align-items:start;justify-content:space-between;gap:20px}h1{font-family:Georgia,serif;font-weight:400;font-size:30px;letter-spacing:-.8px;margin:0 0 9px}p{margin:0;color:#aaa;font-size:14px;line-height:1.5}.tools{display:flex;gap:9px}button{font:inherit;color:#eee;border:1px solid #ffffff30;background:#0c0c0cc9;border-radius:24px;cursor:pointer;padding:11px 17px;touch-action:none;user-select:none}button:hover{border-color:#ffffff70}button:focus-visible{outline:2px solid white;outline-offset:4px}.bottom{position:absolute;bottom:30px;left:24px;right:24px;text-align:center;display:flex;align-items:center;flex-direction:column;gap:16px}.states{display:flex;gap:14px}.hold{width:195px;text-align:left;display:flex;align-items:center;gap:13px;padding:16px 20px;border-radius:15px;transition:background .2s,border-color .2s}.hold b{font-size:18px;border:1px solid #ffffff35;display:grid;place-items:center;width:35px;height:35px;border-radius:8px}.hold span{font-size:15px}.hold small{display:block;font-size:12px;color:#999;margin-top:4px}#calm.active{border-color:#72eaca;background:#103329e8}#energy.active{border-color:#ff7b6a;background:#401810e8}.status{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#aaa}.meter{width:180px;height:2px;background:#ffffff22}.meter i{display:block;height:100%;width:0;background:#ddd}.clock{position:absolute;right:35px;bottom:38px;color:#aaa;font-size:14px;font-variant-numeric:tabular-nums}.hint{font-size:13px;color:#999}.notice{position:absolute;top:110px;left:36px;color:#aaa;font-size:14px}@media(max-width:600px){header{top:22px;left:22px;right:22px}h1{font-size:25px}.tools{flex-direction:column}.tools button{font-size:12px;padding:9px 12px}.hold{width:155px;padding:13px}.hold small{font-size:12px}.clock{position:static}.bottom{bottom:20px;gap:12px}.hint{max-width:270px}}
+</style></head><body><canvas id="water" aria-label="Animated water light responding to keyboard input"></canvas><header><div><h1>Touching Water</h1><p>Hold a key. Change the current.</p></div><div class="tools"><button id="sound" aria-pressed="false">Sound off</button><button id="reset">Restart</button><button id="full">Fullscreen</button></div></header><div id="notice" class="notice"></div><div class="bottom"><div class="status" id="state" aria-live="polite">Neutral · flowing light</div><div class="meter"><i id="level"></i></div><div class="states"><button class="hold" id="calm" aria-label="Hold for calm water"><b>A</b><span>Calm<small>Hold for emerald water</small></span></button><button class="hold" id="energy" aria-label="Hold for energetic water"><b>S</b><span>Energy<small>Hold for crimson water</small></span></button></div><p class="hint">Hold longer to build intensity. Release to let it settle.<br>You can also press and hold the buttons above.</p><div class="clock" id="clock">3:00</div></div><script>
+'use strict';
+const canvas=document.getElementById('water'),stateLabel=document.getElementById('state'),meter=document.getElementById('level'),clock=document.getElementById('clock');
+let gl=canvas.getContext('webgl',{alpha:false,antialias:false,powerPreference:'high-performance'}),program,loc,ctx;
+const vs=`attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
+const fs=`precision highp float;
+uniform vec2 res;uniform float time;uniform float power;uniform float energy;uniform vec3 tint;
+float hash(float p){return fract(sin(p*127.1)*43758.5453);}
+float noise(float p){float i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(hash(i),hash(i+1.),f);}
+float flow(float y,float t,float seed){
+ return (noise(y*3.1+t*.14+seed)-.5)*.38+(noise(y*7.8-t*.11+seed*2.3)-.5)*.13+sin(y*4.2+t*.24+seed)*.065;
+}
+float sheet(vec2 p,float t,float offset,float seed){
+ float y=p.y;
+ float center=offset+flow(y,t,seed);
+ float breath=noise(y*4.6-t*.15+seed+14.);
+ float width=.20+breath*.14;
+ float foldPhase=y*6.5+t*.22+seed;
+ float value=0.;
+ for(int i=0;i<26;i++){
+  float u=float(i)/25.-.5;
+  float fold=sin(u*7.+foldPhase)*(.06+.025*sin(y*4.3-t*.19+seed));
+  float wrinkle=sin(y*17.+u*11.-t*.31+seed)*.005;
+  float path=center+u*width+fold+wrinkle;
+  float distance=abs(p.x-path);
+  float edge=pow(abs(u)*2.,12.);
+  float glint=pow(.5+.5*sin(u*10.+y*7.-t*.18+seed),10.);
+  float highlight=.35+.65*noise(y*5.-t*.21+u*2.+seed+31.);
+  float line=exp(-distance*distance/.000014);
+  float halo=exp(-distance*distance/.00022);
+  float veil=exp(-distance*distance/.0016);
+  value+=(line*(.003+edge*.35+glint*.045)+halo*(.009+edge*.065)+veil*.026)*highlight;
+ }
+ return value;
+}
+void main(){
+ vec2 uv=gl_FragCoord.xy/res;
+ float aspect=res.x/res.y;
+ vec2 p=vec2((uv.x-.5)*aspect,(uv.y-.54)*1.6);
+ p.x/=min(1.,aspect/.95);
+ float t=time;
+ float water=sheet(p,t,-.23,2.1)+sheet(p,t,.06,8.4)*.95+sheet(p,t,.29,15.6)*.75;
+ float fade=smoothstep(.24,.36,uv.y)*(1.-smoothstep(.87,.98,uv.y));
+ water*=fade*(1.10+power*.72);
+ vec3 col=tint*water*2.1;
+ vec3 shine=mix(vec3(1.,.97,.91),tint,.58);
+ col+=shine*pow(max(water-.40,0.),1.6)*.30;
+ col=vec3(1.)-exp(-col);
+ gl_FragColor=vec4(col,1.);
+}`;
+if(gl){try{function compile(type,src){const sh=gl.createShader(type);gl.shaderSource(sh,src);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(sh));return sh}program=gl.createProgram();gl.attachShader(program,compile(gl.VERTEX_SHADER,vs));gl.attachShader(program,compile(gl.FRAGMENT_SHADER,fs));gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('Shader unavailable');gl.useProgram(program);const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);const a=gl.getAttribLocation(program,'p');gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);loc={};for(const name of ['res','time','power','energy','tint'])loc[name]=gl.getUniformLocation(program,name)}catch(e){gl=null;}}
+if(!gl){canvas.replaceWith(canvas.cloneNode());const fallback=document.getElementById('water');ctx=fallback.getContext('2d');document.getElementById('notice').textContent='Simplified water mode';}
+function size(){const c=ctx?ctx.canvas:canvas;const scale=Math.min(1.5,window.devicePixelRatio||1,1200/window.innerWidth);c.width=Math.round(innerWidth*scale);c.height=Math.round(innerHeight*scale);if(gl)gl.viewport(0,0,c.width,c.height)}size();addEventListener('resize',size);
+const held=new Map();let seq=0,intensity=0,red=0,green=0,waveTime=0,last=performance.now(),started=null,ended=false,previousState='';
+function mode(){let result='neutral',order=-1;for(const v of held.values())if(v.order>order){result=v.mode;order=v.order}return result}
+function press(source,m){if(ended||held.has(source))return;held.set(source,{mode:m,order:++seq});if(started===null)started=performance.now();}
+function release(source){held.delete(source)}
+addEventListener('keydown',e=>{if(e.target instanceof HTMLButtonElement&&(e.code==='Space'||e.code==='Enter'))return;if(e.code==='KeyA'||e.code==='KeyS'){e.preventDefault();press(e.code,e.code==='KeyA'?'calm':'energy')}});
+addEventListener('keyup',e=>release(e.code));addEventListener('blur',()=>held.clear());document.addEventListener('visibilitychange',()=>{if(document.hidden)held.clear()});
+for(const [id,m] of [['calm','calm'],['energy','energy']]){const b=document.getElementById(id);b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);press('pointer'+e.pointerId,m)});for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,e=>release('pointer'+e.pointerId));}
+let audio=null,audioEnabled=false;
+function initAudio(){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;const ac=new AC(),buffer=ac.createBuffer(1,ac.sampleRate*3,ac.sampleRate),data=buffer.getChannelData(0);let brown=0;for(let i=0;i<data.length;i++){brown=(brown+Math.random()*.04-.02)/1.02;data[i]=brown*3}const noise=ac.createBufferSource();noise.buffer=buffer;noise.loop=true;const filter=ac.createBiquadFilter();filter.type='lowpass';filter.frequency.value=500;const gain=ac.createGain();gain.gain.value=0;noise.connect(filter);filter.connect(gain);gain.connect(ac.destination);noise.start();audio={ac,filter,gain};return true}
+document.getElementById('sound').onclick=async()=>{try{if(!audio&&!initAudio())throw Error();await audio.ac.resume();audioEnabled=!audioEnabled;document.getElementById('sound').textContent=audioEnabled?'Sound on':'Sound off';document.getElementById('sound').setAttribute('aria-pressed',String(audioEnabled))}catch(e){document.getElementById('notice').textContent='Audio unavailable in this browser.'}};
+document.getElementById('reset').onclick=()=>{held.clear();started=null;ended=false;intensity=0;red=0;green=0;previousState='';};
+document.getElementById('full').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch(e){document.getElementById('notice').textContent='Fullscreen unavailable here. You can enlarge your browser window.'}};
+function frame(now){const dt=Math.min((now-last)/1000,.06);last=now;let remaining=started===null?180:Math.max(0,180-(now-started)/1000);if(remaining===0&&!ended){ended=true;held.clear()}const m=mode(),target=m==='neutral'?0:1;intensity+=(target-intensity)*(1-Math.exp(-dt*(target? .48:1.1)));red+=((m==='energy'?1:0)-red)*(1-Math.exp(-dt*1.9));green+=((m==='calm'?1:0)-green)*(1-Math.exp(-dt*1.9));waveTime+=dt*(.40-green*.15+intensity*.12+red*(.8+intensity*1.6));const neutral=Math.max(0,1-red-green),color=[neutral*.70+green*.10+red*1.,neutral*.79+green*.88+red*.16,neutral*.85+green*.60+red*.07];
+if(gl){gl.uniform2f(loc.res,canvas.width,canvas.height);gl.uniform1f(loc.time,waveTime);gl.uniform1f(loc.power,intensity);gl.uniform1f(loc.energy,red);gl.uniform3fv(loc.tint,color);gl.drawArrays(gl.TRIANGLES,0,6)}else{const c=ctx.canvas,w=c.width,h=c.height;ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);ctx.globalCompositeOperation='lighter';const fit=Math.min(1,(w/h)/.9);for(let bank=0;bank<3;bank++){const seed=bank*1.9,offset=(bank-1)*.235;for(let j=0;j<18;j++){const u=j/17-.5;ctx.beginPath();for(let y=h*.10;y<=h*.74;y+=3){const py=(.46-y/h)*1.24;const bend=Math.sin(py*6.4+waveTime*.36+seed)*.13+Math.sin(py*11-waveTime*.24+seed*1.7)*.055;const width=.155+.045*Math.sin(py*5.5-waveTime*.3+seed);const fold=Math.sin(py*8.3+waveTime*.29+u*3.4+seed)*(.055+red*.015);const x=w*.5+(offset+bend+u*width+fold)*h*fit;y===h*.10?ctx.moveTo(x,y):ctx.lineTo(x,y)}const rgb=color.map(v=>Math.round(v*255)).join(',');ctx.strokeStyle=`rgba(${rgb},${.08+Math.pow(Math.abs(u)*2,5)*.32+intensity*.06})`;ctx.shadowColor=`rgb(${rgb})`;ctx.shadowBlur=9;ctx.lineWidth=1.2;ctx.stroke()}}ctx.shadowBlur=0;ctx.globalCompositeOperation='source-over'}
+const display=ended?'Session complete · restart to explore':m==='calm'?'Calm · emerald flow':m==='energy'?'Energy · crimson current':'Neutral · flowing light';if(display!==previousState){stateLabel.textContent=display;previousState=display}document.getElementById('calm').classList.toggle('active',m==='calm');document.getElementById('energy').classList.toggle('active',m==='energy');meter.style.width=(intensity*100)+'%';meter.style.background=`rgb(${color.map(v=>Math.round(v*255)).join(',')})`;const seconds=Math.ceil(remaining);clock.textContent=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');if(audio){audio.gain.gain.setTargetAtTime(audioEnabled?.035+intensity*.045+red*.025:0,audio.ac.currentTime,.15);audio.filter.frequency.setTargetAtTime(350+green*150+red*(900+intensity*1000),audio.ac.currentTime,.2)}requestAnimationFrame(frame)}requestAnimationFrame(frame);
+if(document.modelContext?.registerTool){try{Promise.resolve(document.modelContext.registerTool({name:'restart_water_session',description:'Reset the water experience and its three-minute timer.',inputSchema:{type:'object',properties:{},additionalProperties:false},execute(input){if(!input||typeof input!=='object'||Object.keys(input).length)throw Error('Expected an empty object');document.getElementById('reset').click();return{state:'neutral',secondsRemaining:180}}})).catch(()=>{})}catch(e){}}
+</script></body></html>
